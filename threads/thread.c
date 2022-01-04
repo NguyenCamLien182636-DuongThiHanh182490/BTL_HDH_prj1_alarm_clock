@@ -28,6 +28,9 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+//danh sach thread dang sleep
+static struct list block_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -92,7 +95,10 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
-
+  
+  //khoi tao list sleep thread
+  list_init (&block_list);
+  
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -204,6 +210,10 @@ thread_create (const char *name, int priority,
   return tid;
 }
 
+
+
+
+
 /* Puts the current thread to sleep.  It will not be scheduled
    again until awoken by thread_unblock().
 
@@ -313,6 +323,55 @@ thread_yield (void)
   schedule ();
   intr_set_level (old_level);
 }
+
+//thay doi sang trang thai BLOCK duoc dinh nghia san trong thread.h
+void
+thread_sleep(int64_t s_ticks) 
+{
+  if(s_ticks <= 0)
+  	return;
+  
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
+  
+  ASSERT (!intr_context ());
+  old_level = intr_disable ();  
+  
+  if (cur != idle_thread) 
+  { 
+      cur->wakeup_tick = timer_ticks() + s_ticks;
+      list_push_back (&block_list, &cur->elem);
+      thread_block();
+  }
+  
+  intr_set_level (old_level);
+}
+
+void 
+thread_wake_by_lien()
+{
+  struct list_elem *tmp, *next;
+  struct thread *alrm;
+  
+  tmp = list_begin (&block_list);
+  
+  while (tmp != list_end (&block_list))
+    { 
+      alrm = list_entry (tmp, struct thread, elem);
+      next = list_next (tmp);
+      if (alrm->wakeup_tick <= timer_ticks ())
+        {
+          enum intr_level old_level;
+	  old_level = intr_disable ();
+	  list_remove (&alrm->elem);
+	  thread_unblock (alrm); /* unblock the thread */
+	  intr_set_level (old_level);
+        }
+      tmp = next;
+    }
+    
+}
+
 
 /* Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
